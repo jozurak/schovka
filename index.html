@@ -16,10 +16,17 @@
     padding: 20px; margin-bottom: 20px; width: 100%; max-width: 400px;
     box-shadow: 0 5px 15px #0008;
   }
+  .state-card {
+    background: #010a14; border: 1px solid #0a0; box-shadow: 0 0 10px #0a04;
+  }
+  h2 { font-size: 1.2em; color: #0f0; margin-top: 0; margin-bottom: 15px; border-bottom: 1px solid #0f04; padding-bottom: 10px; text-align: center; }
+  .state-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 1.1em; }
+  .state-val { font-weight: bold; color: #fff; }
+  
   label { display: block; margin-bottom: 10px; font-size: 0.9em; color: #08a; }
-  input[type="time"] {
-    width: 100%; padding: 10px; font-size: 1.2em; border: 1px solid #0ff;
-    border-radius: 5px; background: #010811; color: #0ff; margin-bottom: 15px;
+  input[type="datetime-local"] {
+    width: 100%; padding: 10px; font-size: 1.1em; border: 1px solid #0ff;
+    border-radius: 5px; background: #010811; color: #0ff; margin-bottom: 15px; color-scheme: dark;
   }
   button {
     width: 100%; padding: 12px; font-size: 1.1em; border: 1px solid #0ff;
@@ -39,9 +46,16 @@
 
 <h1>Admin Panel</h1>
 
+<div class="card state-card">
+  <h2>Aktuálny stav v databáze</h2>
+  <div class="state-row"><span>Čas začiatku:</span> <span class="state-val" id="db-time">Načítavam...</span></div>
+  <div class="state-row"><span>Čas potvrdený:</span> <span class="state-val" id="db-conf">Načítavam...</span></div>
+  <div class="state-row"><span>Odpojené (Hra beží):</span> <span class="state-val" id="db-disc">Načítavam...</span></div>
+</div>
+
 <div class="card">
-  <label>Nastaviť čas začiatku hry (dnes):</label>
-  <input type="time" id="time-input">
+  <label>Nastaviť čas začiatku hry:</label>
+  <input type="datetime-local" id="time-input">
   <button id="set-time-btn">1. Nahrať čas do databázy</button>
   <div class="info-text" style="margin-bottom: 20px;">Čas sa nahrá, ale ESP ho zatiaľ do seba neuzamknú.</div>
   
@@ -62,7 +76,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-  import { getDatabase, ref, set, update } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+  import { getDatabase, ref, set, update, onValue } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyARnXz5vKW8hg_ItOXBBWEQfbhGNpQ7SJk",
@@ -84,21 +98,43 @@
     setTimeout(() => { statusEl.textContent = ""; }, 6000);
   }
 
+  // Setup default time picker to now
   const now = new Date();
-  document.getElementById('time-input').value = now.toTimeString().substring(0,5);
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  document.getElementById('time-input').value = now.toISOString().slice(0,16);
+
+  // Listen to Firebase DB changes
+  const gameRef = ref(db, 'game');
+  onValue(gameRef, (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+      if (data.start_time) {
+        const d = new Date(data.start_time * 1000);
+        document.getElementById('db-time').textContent = d.toLocaleString('sk-SK');
+      } else {
+        document.getElementById('db-time').textContent = "Nenastavený";
+      }
+      
+      const confEl = document.getElementById('db-conf');
+      confEl.textContent = data.time_confirmed ? "ÁNO" : "NIE";
+      confEl.style.color = data.time_confirmed ? "#0f0" : "#f00";
+      
+      const discEl = document.getElementById('db-disc');
+      discEl.textContent = data.disconnect ? "ÁNO" : "NIE";
+      discEl.style.color = data.disconnect ? "#f00" : "#fff";
+    }
+  });
 
   document.getElementById('set-time-btn').addEventListener('click', () => {
     const timeStr = document.getElementById('time-input').value;
     if(!timeStr) return;
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    const targetDate = new Date();
-    targetDate.setHours(hours, minutes, 0, 0);
+    const targetDate = new Date(timeStr);
     const unixSeconds = Math.floor(targetDate.getTime() / 1000);
 
     update(ref(db, 'game'), {
       start_time: unixSeconds,
       time_confirmed: false
-    }).then(() => { showStatus(`Čas ${timeStr} nahraný. Zatiaľ nepotvrdený.`, '#ff0'); })
+    }).then(() => { showStatus(`Čas bol uložený. Zatiaľ nepotvrdený.`, '#ff0'); })
       .catch((error) => { showStatus("Chyba: " + error.message, "#f00"); });
   });
 

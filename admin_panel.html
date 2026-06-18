@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Admin Panel - Schovávačka</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+    background: #020d18; color: #4df;
+    display: flex; flex-direction: column; align-items: center; padding: 20px;
+  }
+  h1 { color: #0ff; text-transform: uppercase; letter-spacing: 2px; }
+  .card {
+    background: #031526; border: 1px solid #0ff4; border-radius: 10px;
+    padding: 20px; margin-bottom: 20px; width: 100%; max-width: 400px;
+    box-shadow: 0 5px 15px #0008;
+  }
+  label { display: block; margin-bottom: 10px; font-size: 0.9em; color: #08a; }
+  input[type="time"] {
+    width: 100%; padding: 10px; font-size: 1.2em; border: 1px solid #0ff;
+    border-radius: 5px; background: #010811; color: #0ff; margin-bottom: 15px;
+  }
+  button {
+    width: 100%; padding: 12px; font-size: 1.1em; border: 1px solid #0ff;
+    border-radius: 5px; background: #068; color: #0ff; cursor: pointer;
+    font-weight: bold; text-transform: uppercase; margin-bottom: 10px;
+  }
+  button:active { background: #0ff; color: #020d18; }
+  .danger-btn { background: #800; border-color: #f00; color: #fcc; }
+  .danger-btn:active { background: #f00; color: #fff; }
+  #status { margin-top: 10px; font-size: 0.9em; color: #0f0; text-align: center; min-height: 20px; }
+  .info-text { font-size: 0.85em; color: #888; margin-top: 5px; text-align: center;}
+</style>
+</head>
+<body>
+
+<h1>Admin Panel</h1>
+
+<div class="card">
+  <label>Nastaviť čas začiatku hry (dnes):</label>
+  <input type="time" id="time-input">
+  <button id="set-time-btn">Nastaviť čas začiatku</button>
+  <div class="info-text">Vyber čas a klikni. Čas sa uloží do Firebase (v sekundách).</div>
+</div>
+
+<div class="card">
+  <label>Odpojenie zariadení:</label>
+  <button id="disconnect-btn" class="danger-btn">Odpojiť ESP</button>
+  <div class="info-text">Pošle signál, ESP sa odpoja od admin WiFi a začnú interné odpočítavanie.</div>
+  
+  <button id="reset-disconnect-btn" style="background:#222; border-color:#555; color:#888; margin-top:20px; padding: 8px;">Reset Odpojenia (pre testy)</button>
+</div>
+
+<div id="status"></div>
+
+<script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+  import { getDatabase, ref, set, get, child } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+
+  // Your web app's Firebase configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyARnXz5vKW8hg_ItOXBBWEQfbhGNpQ7SJk",
+    authDomain: "schovka-2dbf3.firebaseapp.com",
+    databaseURL: "https://schovka-2dbf3-default-rtdb.firebaseio.com",
+    projectId: "schovka-2dbf3",
+    storageBucket: "schovka-2dbf3.firebasestorage.app",
+    messagingSenderId: "757984320237",
+    appId: "1:757984320237:web:bd8db632b3e6a2e60d0ae4"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  const statusEl = document.getElementById('status');
+  function showStatus(msg, color="#0f0") {
+    statusEl.textContent = msg;
+    statusEl.style.color = color;
+    setTimeout(() => { statusEl.textContent = ""; }, 5000);
+  }
+
+  // Pre-fill current time in input
+  const now = new Date();
+  document.getElementById('time-input').value = now.toTimeString().substring(0,5);
+
+  document.getElementById('set-time-btn').addEventListener('click', () => {
+    const timeStr = document.getElementById('time-input').value;
+    if(!timeStr) return;
+    
+    // Parse time
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const targetDate = new Date();
+    targetDate.setHours(hours, minutes, 0, 0);
+    
+    // Convert to Unix Timestamp in SECONDS
+    const unixSeconds = Math.floor(targetDate.getTime() / 1000);
+
+    set(ref(db, 'game/start_time'), unixSeconds)
+      .then(() => {
+        showStatus(`Čas úspešne nastavený na ${timeStr} (${unixSeconds})`);
+      })
+      .catch((error) => {
+        showStatus("Chyba: " + error.message, "#f00");
+      });
+  });
+
+  document.getElementById('disconnect-btn').addEventListener('click', () => {
+    if(confirm('Naozaj chceš odpojiť všetky ESP? Po tomto sa už nebudú synchronizovať s Firebase.')) {
+      set(ref(db, 'game/disconnect'), true)
+        .then(() => {
+          showStatus('Signál na odpojenie odoslaný!');
+        })
+        .catch((error) => {
+          showStatus("Chyba: " + error.message, "#f00");
+        });
+    }
+  });
+
+  document.getElementById('reset-disconnect-btn').addEventListener('click', () => {
+    set(ref(db, 'game/disconnect'), false)
+      .then(() => {
+        showStatus('Signál odpojenia zrušený.');
+      });
+  });
+</script>
+
+</body>
+</html>

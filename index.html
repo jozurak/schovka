@@ -53,6 +53,13 @@
   <div class="state-row"><span>Odpojené (Hra beží):</span> <span class="state-val" id="db-disc">Načítavam...</span></div>
 </div>
 
+<div class="card state-card">
+  <h2>Stav jednotlivých hráčov</h2>
+  <div id="players-list">
+    <div style="text-align:center; color:#888;">Načítavam...</div>
+  </div>
+</div>
+
 <div class="card">
   <label>Nastaviť čas začiatku hry:</label>
   <input type="datetime-local" id="time-input">
@@ -102,6 +109,38 @@
   const now = new Date();
   now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
   document.getElementById('time-input').value = now.toISOString().slice(0,16);
+
+  // Listen to Firebase DB changes for Players
+  const playersRef = ref(db, 'players');
+  onValue(playersRef, (snapshot) => {
+    const data = snapshot.val();
+    const listEl = document.getElementById('players-list');
+    if (data) {
+      listEl.innerHTML = '';
+      for (const [playerName, playerData] of Object.entries(data)) {
+        let statText = "Neznámy";
+        let color = "#888";
+        
+        if (playerData.stat === false || playerData.stat === "false") {
+          statText = "Čaká na potvrdenie (Spojené)";
+          color = "#ff0";
+        } else if (playerData.stat === true || playerData.stat === "true") {
+          statText = "Čas potvrdený (Svieti)";
+          color = "#0f0";
+        } else if (playerData.stat === "odpojene") {
+          statText = "Odpojené (Hrá autonómne)";
+          color = "#0af";
+        }
+        
+        const row = document.createElement('div');
+        row.className = 'state-row';
+        row.innerHTML = `<span>${playerName}:</span> <span class="state-val" style="color: ${color};">${statText}</span>`;
+        listEl.appendChild(row);
+      }
+    } else {
+      listEl.innerHTML = '<div style="text-align:center; color:#888;">Zatiaľ sa neprihlásil žiadny hráč.</div>';
+    }
+  });
 
   // Listen to Firebase DB changes
   const gameRef = ref(db, 'game');

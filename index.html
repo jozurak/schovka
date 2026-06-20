@@ -24,7 +24,7 @@
   .state-val { font-weight: bold; color: #fff; }
   
   label { display: block; margin-bottom: 10px; font-size: 0.9em; color: #08a; }
-  input[type="datetime-local"] {
+  input[type="datetime-local"], input[type="number"] {
     width: 100%; padding: 10px; font-size: 1.1em; border: 1px solid #0ff;
     border-radius: 5px; background: #010811; color: #0ff; margin-bottom: 15px; color-scheme: dark;
   }
@@ -58,6 +58,27 @@
   <div id="players-list">
     <div style="text-align:center; color:#888;">Načítavam...</div>
   </div>
+</div>
+
+<div class="card">
+  <h2>Nastavenia hry</h2>
+  <label>Čas schovávania (HIDE_M) v minútach:</label>
+  <input type="number" id="hide-m" min="1" max="120">
+  
+  <label>Čas hľadania (SEEK_M) v minútach:</label>
+  <input type="number" id="seek-m" min="1" max="120">
+  
+  <label>Čas zvolávania (GATHER_M) v minútach:</label>
+  <input type="number" id="gather-m" min="1" max="120">
+  
+  <label>Čas prestávky (BREAK_M) v minútach:</label>
+  <input type="number" id="break-m" min="1" max="120">
+  
+  <label>Prahová hodnota radaru (RSSI_THRESH) v dBm:</label>
+  <input type="number" id="rssi-thresh" min="-120" max="0">
+  
+  <button id="save-settings-btn" class="confirm-btn" style="margin-top: 10px;">Uložiť nastavenia do DB</button>
+  <div class="info-text" style="margin-bottom: 20px;">Tieto hodnoty si ESP prevezme zo servera a zapíše do pamäte po odoslaní signálu na odpojenie.</div>
 </div>
 
 <div class="card">
@@ -132,11 +153,59 @@
           color = "#0af";
         }
         
+        const roles = playerData.roles || [1, 1, 1]; // Default Hľadač
+
         const row = document.createElement('div');
         row.className = 'state-row';
-        row.innerHTML = `<span>${playerName}:</span> <span class="state-val" style="color: ${color};">${statText}</span>`;
+        row.style.flexDirection = 'column';
+        row.style.borderBottom = '1px solid #0f02';
+        row.style.paddingBottom = '10px';
+        row.style.marginBottom = '10px';
+        
+        row.innerHTML = `
+          <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+            <span>${playerName}:</span> 
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span class="state-val" style="color: ${color};">${statText}</span>
+              <button class="delete-btn" data-p="${playerName}" style="margin:0; padding:2px 8px; width:auto; font-size:0.8em; background:#800; border:1px solid #f00; color:#fcc; border-radius:3px; cursor:pointer;" title="Vymazať hráča">X</button>
+            </div>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 8px; font-size: 0.85em;">
+            <label style="margin:0; color:#08a;">Roly (napr. 110 pre K1,K2,K3):</label>
+            <input type="text" class="role-input" data-p="${playerName}" value="${roles.join('')}" maxlength="3" style="width: 60px; padding: 5px; text-align: center; background:#010811; color:#0ff; border:1px solid #0ff4; border-radius:3px; margin:0;">
+          </div>
+        `;
         listEl.appendChild(row);
       }
+      
+      document.querySelectorAll('.role-input').forEach(inp => {
+        inp.addEventListener('change', (e) => {
+          const pName = e.target.getAttribute('data-p');
+          const val = e.target.value;
+          
+          if (val.length === 3 && /^[01]{3}$/.test(val)) {
+            const currentRoles = [parseInt(val[0]), parseInt(val[1]), parseInt(val[2])];
+            update(ref(db, 'players/' + pName), { roles: currentRoles })
+              .then(() => showStatus('Roly pre ' + pName + ' uložené.'))
+              .catch(err => showStatus("Chyba: " + err.message, "#f00"));
+          } else {
+            showStatus("Neplatný formát rolí. Zadajte presne 3 čísla, napr. 110 (1=Hľadač, 0=Schovávač)", "#f00");
+            e.target.value = (data[pName].roles || [1, 1, 1]).join('');
+          }
+        });
+      });
+
+      document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const pName = e.target.getAttribute('data-p');
+          if (confirm(`Naozaj chceš permanentne vymazať hráča "${pName}" z databázy?`)) {
+            set(ref(db, 'players/' + pName), null)
+              .then(() => showStatus(`Hráč ${pName} bol vymazaný.`, '#0f0'))
+              .catch(err => showStatus("Chyba pri mazaní: " + err.message, "#f00"));
+          }
+        });
+      });
+      
     } else {
       listEl.innerHTML = '<div style="text-align:center; color:#888;">Zatiaľ sa neprihlásil žiadny hráč.</div>';
     }
@@ -147,6 +216,7 @@
   onValue(gameRef, (snapshot) => {
     const data = snapshot.val();
     if (data) {
+      // Sync DB states
       if (data.start_time) {
         const d = new Date(data.start_time * 1000);
         document.getElementById('db-time').textContent = d.toLocaleString('sk-SK');
@@ -161,7 +231,41 @@
       const discEl = document.getElementById('db-disc');
       discEl.textContent = data.disconnect ? "ÁNO" : "NIE";
       discEl.style.color = data.disconnect ? "#f00" : "#fff";
+
+      // Sync settings
+      if (data.HIDE_M === undefined || data.SEEK_M === undefined || data.GATHER_M === undefined || data.BREAK_M === undefined || data.RSSI_THRESH === undefined) {
+         update(ref(db, 'game'), {
+           HIDE_M: data.HIDE_M !== undefined ? data.HIDE_M : 1,
+           SEEK_M: data.SEEK_M !== undefined ? data.SEEK_M : 1,
+           GATHER_M: data.GATHER_M !== undefined ? data.GATHER_M : 1,
+           BREAK_M: data.BREAK_M !== undefined ? data.BREAK_M : 1,
+           RSSI_THRESH: data.RSSI_THRESH !== undefined ? data.RSSI_THRESH : -100
+         });
+      } else {
+         if(document.activeElement.id !== 'hide-m') document.getElementById('hide-m').value = data.HIDE_M;
+         if(document.activeElement.id !== 'seek-m') document.getElementById('seek-m').value = data.SEEK_M;
+         if(document.activeElement.id !== 'gather-m') document.getElementById('gather-m').value = data.GATHER_M;
+         if(document.activeElement.id !== 'break-m') document.getElementById('break-m').value = data.BREAK_M;
+         if(document.activeElement.id !== 'rssi-thresh') document.getElementById('rssi-thresh').value = data.RSSI_THRESH;
+      }
     }
+  });
+
+  document.getElementById('save-settings-btn').addEventListener('click', () => {
+    const hide = parseInt(document.getElementById('hide-m').value) || 1;
+    const seek = parseInt(document.getElementById('seek-m').value) || 1;
+    const gather = parseInt(document.getElementById('gather-m').value) || 1;
+    const break_m = parseInt(document.getElementById('break-m').value) || 1;
+    const rssi = parseInt(document.getElementById('rssi-thresh').value) || -100;
+
+    update(ref(db, 'game'), {
+      HIDE_M: hide,
+      SEEK_M: seek,
+      GATHER_M: gather,
+      BREAK_M: break_m,
+      RSSI_THRESH: rssi
+    }).then(() => { showStatus('Nastavenia hry boli úspešne uložené.', '#0f0'); })
+      .catch((error) => { showStatus("Chyba: " + error.message, "#f00"); });
   });
 
   document.getElementById('set-time-btn').addEventListener('click', () => {
